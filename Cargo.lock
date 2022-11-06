@@ -3,15 +3,6 @@
 version = 3
 
 [[package]]
-name = "MATif"
-version = "0.1.0"
-dependencies = [
- "clap",
- "image",
- "texpresso",
-]
-
-[[package]]
 name = "adler32"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -232,6 +223,15 @@ name = "lzw"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d947cbb889ed21c2a84be6ffbaebf5b4e0f4340638cba0444907e38b56be084"
+
+[[package]]
+name = "matif"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "image",
+ "texpresso",
+]
 
 [[package]]
 name = "memoffset"

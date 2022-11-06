@@ -10,7 +10,7 @@ mod tif;
 
 
 #[derive(Parser)]
-#[command(author="Tom Walters", version, about="Converts an image into MechAssault's texture format (.tif)", long_about = None)]
+#[command(author="Larval Extract", version, about="Converts an image into MechAssault's tif texture format", long_about = None)]
 struct Args {
     /// Source image to convert (png or bmp)
     file: String,
@@ -32,14 +32,13 @@ fn main() {
     let source_path = Path::new(&args.file);
     let source_image = image::open(source_path).expect("File not found");
     
-    let tif_filename = source_path.parent().unwrap().join(source_path.file_stem().unwrap()).join(".tif");
+    let mut tif_filename = source_path.parent().unwrap().join(source_path.file_stem().unwrap());
+    tif_filename.set_extension("tif");
+
+    println!("Writing {}...", tif_filename.display());
+
     let tif_file = File::create(tif_filename).unwrap();
     let mut tif_writer = BufWriter::new(tif_file);
-
-    if args.game == "ma1" {
-        tif::write_tif_file_ma1(&mut tif_writer, &source_image, &args.format);
-    }
-    else {
-
-    }
+    
+    tif::write_tif_file(&mut tif_writer, &source_image, &args.format, &args.game);
 }
