@@ -12,5 +12,8 @@ texpresso = "2.0.1"
 
 [profile.release]
 opt-level = 3
-strip = true
+strip = "symbols"
+lto = true
 panic = "abort"
+debug = false
+codegen-units = 1

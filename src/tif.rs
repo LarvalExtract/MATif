@@ -41,7 +41,7 @@ pub fn get_format_code(fmt: &str) -> u32 {
     }
 }
 
-pub fn write_tif_file(buf: &mut BufWriter<File>, img: &image::DynamicImage, format: &str, game: &str) {
+pub fn write_tif_file(buf: &mut BufWriter<File>, img: &image::DynamicImage, format: &str, game: &str) -> Result<(), std::io::Error> {
     let (mut width, mut height) = img.dimensions();
     let flags = if game == "ma2" { 0x80000000 } else { 0x00000000 } | get_format_code(format);
 
@@ -51,8 +51,8 @@ pub fn write_tif_file(buf: &mut BufWriter<File>, img: &image::DynamicImage, form
 
         let dxt_fmt: texpresso::Format = match flags & 0x7FFFFFFF {
             FORMAT_CODE_DXT1  => Format::Bc1,
-            FORMAT_CODE_DXT3  => Format::Bc3,
-            FORMAT_CODE_DXT5  => Format::Bc5,
+            FORMAT_CODE_DXT3  => Format::Bc2,
+            FORMAT_CODE_DXT5  => Format::Bc3,
             _ => todo!()
         };
         
@@ -66,7 +66,7 @@ pub fn write_tif_file(buf: &mut BufWriter<File>, img: &image::DynamicImage, form
         let total_size = compute_image_size(width, height, flags, mip_levels);
         let mut pixels: Vec<u8> = Vec::<u8>::new();
 
-        write_header(buf, flags, width, height, mip_levels, total_size, total_size, game == "ma2");
+        write_header(buf, flags, width, height, mip_levels, total_size, total_size, game == "ma2")?;
 
         for mip_level in 0..mip_levels {
             pixels.resize(dxt_fmt.compressed_size(width as usize, height as usize), 0);
@@ -84,7 +84,7 @@ pub fn write_tif_file(buf: &mut BufWriter<File>, img: &image::DynamicImage, form
             width >>= 1;
             height >>= 1;
 
-            buf.write_all(&pixels).unwrap();
+            buf.write_all(&pixels)?;
         }
 
     }
@@ -93,33 +93,35 @@ pub fn write_tif_file(buf: &mut BufWriter<File>, img: &image::DynamicImage, form
         let bpp = get_bytes_per_pixel(flags);
         let total_size = padded_width * height * bpp as u32;
 
-        write_header(buf, flags, width, height, 1, total_size, total_size, game == "ma2");
+        write_header(buf, flags, width, height, 1, total_size, total_size, game == "ma2")?;
 
         for y in 0..height {
             for x in 0..padded_width {
                 if x < width {
                     match flags & 0x7FFFFFFF {
-                        FORMAT_CODE_ARGB8888 => buf.write(&pixel_to_argb8888(img.get_pixel(x, y)).to_le_bytes()).unwrap(),
-                        FORMAT_CODE_RGB565   => buf.write(&pixel_to_rgb565(img.get_pixel(x, y)).to_le_bytes()).unwrap(),
-                        FORMAT_CODE_ARGB4444 => buf.write(&pixel_to_argb4444(img.get_pixel(x, y)).to_le_bytes()).unwrap(),
-                        FORMAT_CODE_L8       => buf.write(&pixel_to_l8(img.get_pixel(x, y)).to_le_bytes()).unwrap(),
-                        FORMAT_CODE_LA88     => buf.write(&pixel_to_la88(img.get_pixel(x, y)).to_le_bytes()).unwrap(),
+                        FORMAT_CODE_ARGB8888 => buf.write(&pixel_to_argb8888(img.get_pixel(x, y)).to_le_bytes())?,
+                        FORMAT_CODE_RGB565   => buf.write(&pixel_to_rgb565(img.get_pixel(x, y)).to_le_bytes())?,
+                        FORMAT_CODE_ARGB4444 => buf.write(&pixel_to_argb4444(img.get_pixel(x, y)).to_le_bytes())?,
+                        FORMAT_CODE_L8       => buf.write(&pixel_to_l8(img.get_pixel(x, y)).to_le_bytes())?,
+                        FORMAT_CODE_LA88     => buf.write(&pixel_to_la88(img.get_pixel(x, y)).to_le_bytes())?,
                         _ => todo!()
                     };
                 } else {
                     match bpp {
-                        1 => buf.write(b"\0").unwrap(),
-                        2 => buf.write(b"\0\0").unwrap(),
-                        4 => buf.write(b"\0\0\0\0").unwrap(),
+                        1 => buf.write(b"\0")?,
+                        2 => buf.write(b"\0\0")?,
+                        4 => buf.write(b"\0\0\0\0")?,
                         _ => todo!()
                     };
                 }
             }
         }
     }
+
+    Ok(())
 }
 
-fn write_header(buf: &mut BufWriter<File>, flags: u32, width: u32, height: u32, mips: u32, size: u32, actual_size: u32, is_ma2: bool) {
+fn write_header(buf: &mut BufWriter<File>, flags: u32, width: u32, height: u32, mips: u32, size: u32, actual_size: u32, is_ma2: bool) -> Result<(), std::io::Error> {
 
     let bits = actual_size + 8;
     let mut pic_length = 16 + 9 + (12 * 5) + bits;
@@ -129,61 +131,64 @@ fn write_header(buf: &mut BufWriter<File>, flags: u32, width: u32, height: u32, 
     let total_length = pic_length + 32;
 
     // Write MGI header
-    buf.write(&u32::to_le_bytes(65536)).unwrap();
-    buf.write(b"MGIc").unwrap();
-    buf.write(&total_length.to_le_bytes()).unwrap();
-    buf.write(&u32::to_le_bytes(1)).unwrap();
-    buf.write(b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0").unwrap();
+    buf.write(&u32::to_le_bytes(65536))?;
+    buf.write(b"MGIc")?;
+    buf.write(&total_length.to_le_bytes())?;
+    buf.write(&u32::to_le_bytes(1))?;
+    buf.write(b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0")?;
 
     // Write PIC chunk
-    buf.write(b"PIC ").unwrap();
-    buf.write(b"\0\0\0\0").unwrap();
-    buf.write(&pic_length.to_le_bytes()).unwrap();
-    buf.write(&u32::to_le_bytes(9)).unwrap();
+    buf.write(b"PIC ")?;
+    buf.write(b"\0\0\0\0")?;
+    buf.write(&pic_length.to_le_bytes())?;
+    buf.write(&u32::to_le_bytes(if is_ma2 { 9 } else { 7 }))?;
+    
 
     // Write "ver "
-    buf.write(b"ver ").unwrap();
-    buf.write(&u32::to_le_bytes(9)).unwrap();
-    buf.write(&u8::to_le_bytes(if is_ma2 { 4u8 } else { 2u8 })).unwrap();
+    buf.write(b"ver ")?;
+    buf.write(&u32::to_le_bytes(9))?;
+    buf.write(&u8::to_le_bytes(if is_ma2 { 4u8 } else { 2u8 }))?;
 
     // Write "flgs"
-    buf.write(b"flgs").unwrap();
-    buf.write(&u32::to_le_bytes(12)).unwrap();
-    buf.write(&flags.to_le_bytes()).unwrap();
+    buf.write(b"flgs")?;
+    buf.write(&u32::to_le_bytes(12))?;
+    buf.write(&flags.to_le_bytes())?;
 
     // Write "wdth"
-    buf.write(b"wdth").unwrap();
-    buf.write(&u32::to_le_bytes(12)).unwrap();
-    buf.write(&width.to_le_bytes()).unwrap();
+    buf.write(b"wdth")?;
+    buf.write(&u32::to_le_bytes(12))?;
+    buf.write(&width.to_le_bytes())?;
 
     // Write "hgt "
-    buf.write(b"hgt ").unwrap();
-    buf.write(&u32::to_le_bytes(12)).unwrap();
-    buf.write(&height.to_le_bytes()).unwrap();
+    buf.write(b"hgt ")?;
+    buf.write(&u32::to_le_bytes(12))?;
+    buf.write(&height.to_le_bytes())?;
 
     // Write "mips "
-    buf.write(b"mips").unwrap();
-    buf.write(&u32::to_le_bytes(12)).unwrap();
-    buf.write(&mips.to_le_bytes()).unwrap();
+    buf.write(b"mips")?;
+    buf.write(&u32::to_le_bytes(12))?;
+    buf.write(&mips.to_le_bytes())?;
 
     // Write "size"
-    buf.write(b"size").unwrap();
-    buf.write(&u32::to_le_bytes(12)).unwrap();
-    buf.write(&size.to_le_bytes()).unwrap();
+    buf.write(b"size")?;
+    buf.write(&u32::to_le_bytes(12))?;
+    buf.write(&size.to_le_bytes())?;
 
     if is_ma2 {
-        buf.write(b"frms").unwrap();
-        buf.write(&u32::to_le_bytes(12)).unwrap();
-        buf.write(&u32::to_le_bytes(1)).unwrap();
+        buf.write(b"frms")?;
+        buf.write(&u32::to_le_bytes(12))?;
+        buf.write(&u32::to_le_bytes(1))?;
 
-        buf.write(b"dpth").unwrap();
-        buf.write(&u32::to_le_bytes(12)).unwrap();
-        buf.write(&u32::to_le_bytes(1)).unwrap();
+        buf.write(b"dpth")?;
+        buf.write(&u32::to_le_bytes(12))?;
+        buf.write(&u32::to_le_bytes(1))?;
     }
 
     // Write "bits"
-    buf.write(b"bits").unwrap();
-    buf.write(&bits.to_le_bytes()).unwrap();
+    buf.write(b"bits")?;
+    buf.write(&bits.to_le_bytes())?;
+
+    Ok(())
 }
 
 fn get_bytes_per_pixel(fmt_code: u32) -> usize {
